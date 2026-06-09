@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Layout } from "@/components/layout/Layout";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -9,6 +9,32 @@ import { Badge } from "@/components/ui/badge";
 import { Calculator, TrendingUp, BarChart3, Cpu, Loader2, ArrowRight } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import {
+  predictArimax,
+  simulateProphet,
+  ArimaxPrediction,
+  ProphetSimulation,
+  ArimaxInput,
+  ProphetInput,
+  simulateLstm,
+  LstmSimulation,
+  LstmInput,
+  getIndicatorsHistory,
+  IndicatorsHistory,
+  getArimaPrediction,
+  getLstmPrediction,
+  getProphetPrediction,
+  getIndicatorsHistory, // Keep this for now, might be used elsewhere
+  getLastTwoMonthsPrice, // Import the new function
+} from "@/services/api";
+import type {
+  ArimaPrediction,
+  ProphetPrediction,
+  LstmPrediction,
+  IndicatorsHistory,
+  PriceHistory, // Import the new type
+} from "@/services/api";
+import { useForm, Controller } from "react-hook-form";
+import {
   LineChart,
   Line,
   XAxis,
@@ -18,12 +44,16 @@ import {
   Legend,
   ResponsiveContainer,
   ReferenceLine,
+  Area,
 } from "recharts";
 
 interface PredictionResult {
   model: string;
   prediction: number;
+  predictions?: number[];
   confidence?: { lower: number; upper: number };
+  confidences?: { lower: number[]; upper: number[] };
+  dates?: string[];
   timestamp: Date;
 }
 
@@ -40,42 +70,8 @@ const defaultValues: FormData = {
   pib: "3.0",
   inflation: "9.0",
   balance: "-13.0",
-  chomage: "15.0",
+  chomage: "15.3",
 };
-
-// Mock historical data for visualization
-const historicalData = [
-  { date: "Sep 2023", actual: 0.300 },
-  { date: "Oct 2023", actual: 0.298 },
-  { date: "Nov 2023", actual: 0.295 },
-  { date: "Déc 2023", actual: 0.297 },
-  { date: "Jan 2024", actual: 0.299 },
-  { date: "Fév 2024", actual: 0.296 },
-];
-
-const simulators = [
-  {
-    id: "arima",
-    name: "ARIMA",
-    icon: TrendingUp,
-    endpoint: "/predict/arima",
-    color: "hsl(var(--chart-1))",
-  },
-  {
-    id: "prophet",
-    name: "Prophet",
-    icon: BarChart3,
-    endpoint: "/predict/prophet",
-    color: "hsl(var(--chart-2))",
-  },
-  {
-    id: "lstm",
-    name: "LSTM",
-    icon: Cpu,
-    endpoint: "/predict/lstm",
-    color: "hsl(var(--chart-3))",
-  },
-];
 
 function SimulatorForm({
   modelId,
@@ -92,51 +88,118 @@ function SimulatorForm({
   const [isLoading, setIsLoading] = useState(false);
   const [result, setResult] = useState<PredictionResult | null>(null);
   const { toast } = useToast();
+  const [historicalData, setHistoricalData] = useState<{ date: string; actual: number }[]>([]);
 
-  const handleChange = (field: keyof FormData, value: string) => {
+  useEffect(() => {
+    const fetchPriceHistory = async () => {
+      try {
+        const history = await getLastTwoMonthsPrice();
+        const formattedData = history.dates.map((date, index) => ({
+          date: new Date(date).toLocaleDateString("fr-FR", {
+            month: "short",
+            day: "numeric",
+          }),
+          actual: history.price[index],
+        }));
+        setHistoricalData(formattedData);
+      } catch (error) {
+        console.error("Failed to fetch price history:", error);
+        // Handle error appropriately
+      }
+    };
+
+    fetchPriceHistory();
+  }, []);
+
+  const handleChange = (field: string, value: string) => {
     setFormData((prev) => ({ ...prev, [field]: value }));
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
+    setResult(null);
 
-    // Simulate API call - replace with actual FastAPI call
     try {
-      await new Promise((resolve) => setTimeout(resolve, 1500));
+      let predictionResult: PredictionResult;
 
-      // Mock prediction based on inputs
-      const basePrediction = 0.298;
-      const tmmEffect = (parseFloat(formData.tmm) - 8) * -0.002;
-      const inflationEffect = (parseFloat(formData.inflation) - 9) * -0.003;
-      const balanceEffect = (parseFloat(formData.balance) + 13) * 0.001;
-
-      const prediction = basePrediction + tmmEffect + inflationEffect + balanceEffect;
-
-      const predictionResult: PredictionResult = {
-        model: modelName,
-        prediction: Math.round(prediction * 10000) / 10000,
-        confidence:
-          modelId === "arima" || modelId === "prophet"
-            ? {
-                lower: Math.round((prediction - 0.008) * 10000) / 10000,
-                upper: Math.round((prediction + 0.008) * 10000) / 10000,
-              }
-            : undefined,
-        timestamp: new Date(),
+      const commonPayload = {
+        PIB: parseFloat(formData.pib),
+        Balance_Commerciale: parseFloat(formData.balance),
+        TMM: parseFloat(formData.tmm),
       };
+
+      if (modelId === "arima") {
+        const arimaxInput: ArimaxInput = {
+          ...commonPayload,
+          Unemployment_Rate: parseFloat(formData.chomage),
+          Inflation_Rate: parseFloat(formData.inflation),
+        };
+        const response = await predictArimax(arimaxInput);
+        const firstPrediction = response.forecast[0];
+
+        predictionResult = {
+          model: modelName,
+          prediction: Math.round(firstPrediction * 10000) / 10000,
+          predictions: response.forecast.slice(0, 3),
+          timestamp: new Date(),
+        };
+      } else if (modelId === "prophet") {
+        const prophetInput: ProphetInput = {
+          ...commonPayload,
+          scenario_name: `Simulation ${modelName}`,
+          Inflation_Rate: parseFloat(formData.inflation),
+          Unemployment_Rate: parseFloat(formData.chomage),
+        };
+        const response = await simulateProphet(prophetInput);
+
+        predictionResult = {
+          model: modelName,
+          prediction: Math.round(response.point_forecast * 10000) / 10000,
+          confidence: {
+            lower: Math.round(response.lower_bound * 10000) / 10000,
+            upper: Math.round(response.upper_bound * 10000) / 10000,
+          },
+          dates: [response.date],
+          timestamp: new Date(),
+        };
+      } else {
+        const lstmInput: LstmInput = {
+          scenario: [
+            {
+              PIB: parseFloat(formData.pib),
+              Balance_Commerciale: parseFloat(formData.balance),
+              TMM: parseFloat(formData.tmm),
+              Inflation_Rate: parseFloat(formData.inflation),
+            },
+          ],
+        };
+        const response = await simulateLstm(lstmInput);
+        const firstPrediction = response.simulated_prices[0];
+
+        predictionResult = {
+          model: modelName,
+          prediction: Math.round(firstPrediction * 10000) / 10000,
+          predictions: response.simulated_prices,
+          timestamp: new Date(),
+        };
+      }
 
       setResult(predictionResult);
       onPredict(predictionResult);
 
       toast({
         title: "Prédiction effectuée",
-        description: `Le modèle ${modelName} prédit un taux de ${predictionResult.prediction.toFixed(4)} TND/EUR`,
+        description: `Le modèle ${modelName} prédit un taux de ${predictionResult.prediction.toFixed(
+          4
+        )} TND/EUR`,
       });
     } catch (error) {
+      console.error(error);
       toast({
         title: "Erreur",
-        description: "Impossible de contacter le serveur de prédiction",
+        description:
+          "Impossible de contacter le serveur de prédiction. Vérifiez que le serveur est bien lancé.",
         variant: "destructive",
       });
     } finally {
@@ -144,18 +207,76 @@ function SimulatorForm({
     }
   };
 
-  const chartData = result
-    ? [
-        ...historicalData,
-        {
-          date: "Prédiction",
-          actual: undefined,
-          prediction: result.prediction,
-          lower: result.confidence?.lower,
-          upper: result.confidence?.upper,
-        },
-      ]
-    : historicalData;
+  const chartData = (() => {
+    const baseData = historicalData.map(d => ({ date: d.date, actual: d.actual }));
+
+    if (!result) {
+      return baseData;
+    }
+
+    const lastHistoricalDate = historicalData.length > 0 
+      ? new Date(historicalData[historicalData.length - 1].date.split('/').reverse().join('-')) 
+      : new Date();
+
+    if (result.model === "Prophet" && result.dates && result.prediction) {
+      const predictionStartDate = new Date(lastHistoricalDate);
+      predictionStartDate.setDate(predictionStartDate.getDate() + 1);
+
+      const forecastData = result.dates.map((date, i) => ({
+        date: new Date(predictionStartDate).toLocaleDateString("fr-FR", {
+          month: "short",
+          day: "numeric",
+        }),
+        prediction: result.prediction,
+        lower: result.confidence?.lower,
+        upper: result.confidence?.upper,
+      }));
+      return [...baseData, ...forecastData];
+    }
+
+    if (result.model === "ARIMA" && result.predictions) {
+      const predictionStartDate = new Date(lastHistoricalDate);
+      predictionStartDate.setDate(predictionStartDate.getDate() + 1);
+
+      const forecastData = result.predictions.map((p, i) => {
+        const futureDate = new Date(predictionStartDate);
+        futureDate.setDate(predictionStartDate.getDate() + i);
+        return {
+          date: futureDate.toLocaleDateString("fr-FR", { month: 'short', day: 'numeric' }),
+          prediction: p,
+        };
+      });
+      return [...baseData, ...forecastData];
+    }
+
+    // For LSTM or other models
+    if (result.predictions && result.dates) {
+        const predictionStartDate = new Date(lastHistoricalDate);
+        predictionStartDate.setDate(predictionStartDate.getDate() + 1);
+
+        const forecastData = result.dates.map((date, i) => ({
+            date: new Date(predictionStartDate).toLocaleDateString("fr-FR", { month: 'short', day: 'numeric' }),
+            prediction: result.predictions ? result.predictions[i] : undefined,
+            lower: result.confidences ? result.confidences.lower[i] : undefined,
+            upper: result.confidences ? result.confidences.upper[i] : undefined,
+        }));
+        return [...baseData, ...forecastData];
+    }
+
+    // Fallback for single prediction point
+    const predictionStartDate = new Date(lastHistoricalDate);
+    predictionStartDate.setDate(predictionStartDate.getDate() + 1);
+
+    return [
+      ...baseData,
+      {
+        date: predictionStartDate.toLocaleDateString("fr-FR", { month: 'short', day: 'numeric' }),
+        prediction: result.prediction,
+        lower: result.confidence?.lower,
+        upper: result.confidence?.upper,
+      },
+    ];
+  })();
 
   return (
     <div className="space-y-6">
@@ -205,20 +326,22 @@ function SimulatorForm({
               placeholder="-13.0"
             />
           </div>
-          <div className="space-y-2">
-            <Label htmlFor={`${modelId}-chomage`}>Chômage (%)</Label>
-            <Input
-              id={`${modelId}-chomage`}
-              type="number"
-              step="0.1"
-              value={formData.chomage}
-              onChange={(e) => handleChange("chomage", e.target.value)}
-              placeholder="15.0"
-            />
-          </div>
+          {modelId !== "lstm" && (
+            <div className="space-y-2">
+              <Label htmlFor={`${modelId}-chomage`}>Chômage (%)</Label>
+              <Input
+                id={`${modelId}-chomage`}
+                type="number"
+                step="0.1"
+                value={formData.chomage}
+                onChange={(e) => handleChange("chomage", e.target.value)}
+                placeholder="15.3"
+              />
+            </div>
+          )}
         </div>
 
-        <Button type="submit" disabled={isLoading} className="w-full sm:w-auto">
+        <Button type="submit" disabled={isLoading} className="w-full" style={{ backgroundColor: modelColor }}>
           {isLoading ? (
             <>
               <Loader2 className="mr-2 h-4 w-4 animate-spin" />
@@ -233,6 +356,79 @@ function SimulatorForm({
         </Button>
       </form>
 
+      {/* Chart */}
+      <Card className="border-border/50">
+        <CardHeader>
+          <CardTitle className="text-base">Historique et prédiction</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="h-64">
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart data={chartData}>
+                <CartesianGrid strokeDasharray="3 3" className="stroke-border" />
+                <XAxis dataKey="date" tick={{ fontSize: 12 }} />
+                <YAxis
+                  tick={{ fontSize: 12 }}
+                  domain={["dataMin - 0.005", "dataMax + 0.005"]}
+                  allowDataOverflow
+                />
+                <Tooltip
+                  contentStyle={{
+                    backgroundColor: "hsl(var(--card))",
+                    border: "1px solid hsl(var(--border))",
+                    borderRadius: "8px",
+                  }}
+                />
+                <Legend />
+                <Line
+                  type="monotone"
+                  dataKey="actual"
+                  name="Historique"
+                  stroke="hsl(var(--muted-foreground))"
+                  strokeWidth={2}
+                  dot={{ fill: "hsl(var(--muted-foreground))" }}
+                />
+                {result && (
+                  <>
+                    <Line
+                      type="monotone"
+                      dataKey="prediction"
+                      name="Prédiction"
+                      stroke={modelColor}
+                      strokeWidth={3}
+                      strokeDasharray="5 5"
+                      dot={{ fill: modelColor, r: 6 }}
+                    />
+                    {result.confidence && (
+                      <>
+                        <Line
+                          type="monotone"
+                          dataKey="lower"
+                          name="Borne inférieure"
+                          stroke={modelColor}
+                          strokeWidth={1}
+                          strokeDasharray="3 3"
+                          dot={false}
+                        />
+                        <Line
+                          type="monotone"
+                          dataKey="upper"
+                          name="Borne supérieure"
+                          stroke={modelColor}
+                          strokeWidth={1}
+                          strokeDasharray="3 3"
+                          dot={false}
+                        />
+                      </>
+                    )}
+                  </>
+                )}
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+        </CardContent>
+      </Card>
+
       {result && (
         <div className="space-y-6">
           {/* Result Card */}
@@ -242,7 +438,7 @@ function SimulatorForm({
                 <div className="text-center sm:text-left">
                   <div className="text-sm text-muted-foreground">Prédiction {modelName}</div>
                   <div className="text-4xl font-bold" style={{ color: modelColor }}>
-                    {result.prediction.toFixed(4)}
+                    {typeof result.prediction === 'number' ? result.prediction.toFixed(4) : 'N/A'}
                   </div>
                   <div className="text-sm text-muted-foreground">TND/EUR</div>
                 </div>
@@ -258,65 +454,36 @@ function SimulatorForm({
               </div>
             </CardContent>
           </Card>
-
-          {/* Chart */}
-          <Card className="border-border/50">
-            <CardHeader>
-              <CardTitle className="text-base">Historique et prédiction</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="h-64">
-                <ResponsiveContainer width="100%" height="100%">
-                  <LineChart data={chartData}>
-                    <CartesianGrid strokeDasharray="3 3" className="stroke-border" />
-                    <XAxis dataKey="date" tick={{ fontSize: 12 }} />
-                    <YAxis domain={[0.28, 0.32]} tick={{ fontSize: 12 }} />
-                    <Tooltip
-                      contentStyle={{
-                        backgroundColor: "hsl(var(--card))",
-                        border: "1px solid hsl(var(--border))",
-                        borderRadius: "8px",
-                      }}
-                    />
-                    <Legend />
-                    <Line
-                      type="monotone"
-                      dataKey="actual"
-                      name="Historique"
-                      stroke="hsl(var(--muted-foreground))"
-                      strokeWidth={2}
-                      dot={{ fill: "hsl(var(--muted-foreground))" }}
-                    />
-                    <Line
-                      type="monotone"
-                      dataKey="prediction"
-                      name="Prédiction"
-                      stroke={modelColor}
-                      strokeWidth={3}
-                      strokeDasharray="5 5"
-                      dot={{ fill: modelColor, r: 6 }}
-                    />
-                    {result.confidence && (
-                      <ReferenceLine
-                        y={result.prediction}
-                        stroke={modelColor}
-                        strokeDasharray="3 3"
-                        label=""
-                      />
-                    )}
-                  </LineChart>
-                </ResponsiveContainer>
-              </div>
-            </CardContent>
-          </Card>
         </div>
       )}
     </div>
   );
 }
 
+const simulators = [
+  {
+    id: "arima",
+    name: "ARIMA",
+    icon: TrendingUp,
+    color: "#f97316",
+  },
+  {
+    id: "prophet",
+    name: "Prophet",
+    icon: BarChart3,
+    color: "#f97316",
+  },
+  {
+    id: "lstm",
+    name: "LSTM",
+    icon: Cpu,
+    color: "#f97316",
+  },
+];
+
 export default function Simulateurs() {
   const [predictions, setPredictions] = useState<PredictionResult[]>([]);
+  const [activeTab, setActiveTab] = useState("arima");
 
   const handlePredict = (result: PredictionResult) => {
     setPredictions((prev) => {
@@ -371,7 +538,7 @@ export default function Simulateurs() {
       {/* Simulators */}
       <section className="py-16">
         <div className="container mx-auto px-4">
-          <Tabs defaultValue="arima" className="space-y-8">
+          <Tabs defaultValue="arima" className="space-y-8" onValueChange={setActiveTab}>
             <TabsList className="grid w-full grid-cols-3">
               {simulators.map((sim) => (
                 <TabsTrigger key={sim.id} value={sim.id} className="gap-2">

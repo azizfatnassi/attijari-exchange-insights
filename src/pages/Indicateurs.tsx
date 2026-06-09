@@ -1,340 +1,518 @@
-import { useMemo } from "react";
+import { useMemo, useState, useEffect } from "react";
 import { Layout } from "@/components/layout/Layout";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { BarChart3, TrendingUp, Grid3X3 } from "lucide-react";
+import { Skeleton } from "@/components/ui/skeleton";
+import { BarChart3, TrendingUp, Grid3X3, Loader2, AlertTriangle, ArrowUpRight, ArrowDownRight } from "lucide-react";
+import { CorrelationMatrix, getCorrelationMatrix, getIndicatorsHistory, IndicatorsHistory, getIndicatorsStats, IndicatorsStatsResponse, getIndicatorsVolatility, VolatilityResponse } from "@/services/api";
+import useSWR from "swr";
 import {
   LineChart,
+  ResponsiveContainer,
   Line,
   XAxis,
   YAxis,
   CartesianGrid,
   Tooltip,
   Legend,
-  ResponsiveContainer,
   BarChart,
   Bar,
   Cell,
 } from "recharts";
+import { Progress } from "@/components/ui/progress";
+import { ChartContainer, ChartConfig } from "@/components/ui/chart";
 
-// Mock historical data
-const historicalData = [
-  { date: "Jan 2023", tndeur: 0.30, tmm: 8.0, pib: 3.2, inflation: 10.1, balance: -15.2, chomage: 15.2 },
-  { date: "Fév 2023", tndeur: 0.29, tmm: 8.0, pib: 3.1, inflation: 10.3, balance: -14.8, chomage: 15.4 },
-  { date: "Mar 2023", tndeur: 0.29, tmm: 8.0, pib: 3.0, inflation: 10.2, balance: -15.1, chomage: 15.3 },
-  { date: "Avr 2023", tndeur: 0.30, tmm: 8.0, pib: 2.9, inflation: 10.0, balance: -14.5, chomage: 15.5 },
-  { date: "Mai 2023", tndeur: 0.30, tmm: 8.0, pib: 2.8, inflation: 9.8, balance: -14.2, chomage: 15.6 },
-  { date: "Juin 2023", tndeur: 0.29, tmm: 8.0, pib: 2.9, inflation: 9.5, balance: -13.8, chomage: 15.4 },
-  { date: "Juil 2023", tndeur: 0.29, tmm: 8.0, pib: 3.0, inflation: 9.3, balance: -13.5, chomage: 15.2 },
-  { date: "Août 2023", tndeur: 0.30, tmm: 8.0, pib: 3.1, inflation: 9.1, balance: -13.2, chomage: 15.0 },
-  { date: "Sep 2023", tndeur: 0.30, tmm: 8.0, pib: 3.2, inflation: 9.0, balance: -13.0, chomage: 14.8 },
-  { date: "Oct 2023", tndeur: 0.29, tmm: 8.0, pib: 3.3, inflation: 8.8, balance: -12.8, chomage: 14.6 },
-  { date: "Nov 2023", tndeur: 0.29, tmm: 8.0, pib: 3.4, inflation: 8.5, balance: -12.5, chomage: 14.5 },
-  { date: "Déc 2023", tndeur: 0.30, tmm: 8.0, pib: 3.5, inflation: 8.3, balance: -12.2, chomage: 14.3 },
-];
 
-const featureImportance = [
-  { name: "TMM", importance: 0.28, color: "hsl(var(--chart-1))" },
-  { name: "Inflation", importance: 0.25, color: "hsl(var(--chart-2))" },
-  { name: "Balance commerciale", importance: 0.22, color: "hsl(var(--chart-3))" },
-  { name: "PIB", importance: 0.15, color: "hsl(var(--chart-4))" },
-  { name: "Chômage", importance: 0.10, color: "hsl(var(--chart-5))" },
-];
 
-// Correlation matrix data
-const correlationMatrix = [
-  { indicator: "TND/EUR", tndeur: 1.0, tmm: -0.65, pib: 0.45, inflation: -0.72, balance: 0.58, chomage: -0.38 },
-  { indicator: "TMM", tndeur: -0.65, tmm: 1.0, pib: -0.32, inflation: 0.78, balance: -0.45, chomage: 0.28 },
-  { indicator: "PIB", tndeur: 0.45, tmm: -0.32, pib: 1.0, inflation: -0.55, balance: 0.68, chomage: -0.72 },
-  { indicator: "Inflation", tndeur: -0.72, tmm: 0.78, pib: -0.55, inflation: 1.0, balance: -0.62, chomage: 0.48 },
-  { indicator: "Balance", tndeur: 0.58, tmm: -0.45, pib: 0.68, inflation: -0.62, balance: 1.0, chomage: -0.52 },
-  { indicator: "Chômage", tndeur: -0.38, tmm: 0.28, pib: -0.72, inflation: 0.48, balance: -0.52, chomage: 1.0 },
-];
+const HistoricalDataView = () => {
+  const { data: historicalData, isLoading, error } = useSWR<IndicatorsHistory>(
+    "indicators-history",
+    getIndicatorsHistory
+  );
 
-const getCorrelationColor = (value: number) => {
-  if (value === 1) return "bg-primary";
-  if (value >= 0.6) return "bg-green-500";
-  if (value >= 0.3) return "bg-green-300";
-  if (value >= -0.3) return "bg-muted";
-  if (value >= -0.6) return "bg-red-300";
-  return "bg-red-500";
-};
+  const indicators = useMemo(
+    () => [
+      { key: "tmm", name: "TMM (%)", color: "#f97316" },
+      { key: "pib", name: "PIB (%)", color: "#dc2626" },
+      { key: "inflation", name: "Inflation (%)", color: "#1a1a1a" },
+      { key: "balance", name: "Balance (Mds TND)", color: "#fb923c" },
+      { key: "chomage", name: "Chômage (%)", color: "#ef4444" },
+    ],
+    []
+  );
 
-export default function Indicateurs() {
-  const indicators = useMemo(() => [
-    { key: "tmm", name: "TMM (%)", color: "#f97316" },
-    { key: "pib", name: "PIB (%)", color: "#dc2626" },
-    { key: "inflation", name: "Inflation (%)", color: "#1a1a1a" },
-    { key: "balance", name: "Balance (Mds TND)", color: "#fb923c" },
-    { key: "chomage", name: "Chômage (%)", color: "#ef4444" },
-  ], []);
+  if (isLoading) {
+    return (
+      <div className="grid gap-6 lg:grid-cols-2">
+        {[...Array(5)].map((_, i) => (
+          <Card key={i} className="border-border/50">
+            <CardHeader className="pb-2">
+              <Skeleton className="h-6 w-2/3" />
+            </CardHeader>
+            <CardContent>
+              <div className="h-48">
+                <Skeleton className="h-full w-full" />
+              </div>
+            </CardContent>
+          </Card>
+        ))}
+      </div>
+    );
+  }
+
+  if (error || !historicalData) {
+    return (
+      <div className="flex h-64 flex-col items-center justify-center text-destructive">
+        <AlertTriangle className="h-8 w-8" />
+        <p className="mt-2 text-center">
+          Une erreur est survenue lors du chargement de l'historique.
+        </p>
+      </div>
+    );
+  }
+
+  const chartData = historicalData.map((d) => ({
+    ...d,
+    date: new Date(d.date).toLocaleDateString("fr-FR", {
+      month: "short",
+      year: "numeric",
+    }),
+  }));
 
   return (
-    <Layout>
-      {/* Hero Section */}
-      <section className="bg-gradient-to-br from-background via-muted/30 to-background py-16 lg:py-24">
-        <div className="container mx-auto px-4">
-          <div className="mx-auto max-w-3xl text-center">
-            <div className="mb-6 inline-flex items-center gap-2 rounded-full border border-primary/20 bg-primary/10 px-4 py-2 text-sm font-medium text-primary">
-              <BarChart3 className="h-4 w-4" />
-              Analyse de données
-            </div>
-            <h1 className="mb-6 text-4xl font-bold tracking-tight text-foreground sm:text-5xl">
-              Indicateurs <span className="text-gradient-attijari">Économiques</span>
-            </h1>
-            <p className="text-lg text-muted-foreground">
-              Explorez les relations entre les indicateurs économiques clés et le taux de change TND/EUR 
-              à travers des visualisations interactives.
-            </p>
+    <>
+      <Card className="border-border/50">
+        <CardHeader>
+          <CardTitle>Évolution du taux TND/EUR</CardTitle>
+          <CardDescription>
+            Historique du taux de change sur les 12 derniers mois
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="h-80">
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart data={chartData}>
+                <CartesianGrid strokeDasharray="3 3" className="stroke-border" />
+                <XAxis dataKey="date" className="text-xs" />
+                <YAxis
+                  domain={["dataMin - 0.005", "dataMax + 0.005"]}
+                  className="text-xs"
+                />
+                <Tooltip
+                  contentStyle={{
+                    backgroundColor: "hsl(var(--card))",
+                    border: "1px solid hsl(var(--border))",
+                    borderRadius: "8px",
+                  }}
+                />
+                <Legend />
+                <Line
+                  type="monotone"
+                  dataKey="tndeur"
+                  name="TND/EUR"
+                  stroke="hsl(var(--primary))"
+                  strokeWidth={3}
+                  dot={{ fill: "hsl(var(--primary))" }}
+                />
+              </LineChart>
+            </ResponsiveContainer>
           </div>
-        </div>
-      </section>
+        </CardContent>
+      </Card>
 
-      {/* Main Content */}
-      <section className="py-16">
-        <div className="container mx-auto px-4">
-          <Tabs defaultValue="timeseries" className="space-y-8">
-            <TabsList className="grid w-full grid-cols-3">
-              <TabsTrigger value="timeseries" className="gap-2">
-                <TrendingUp className="h-4 w-4" />
-                Séries temporelles
-              </TabsTrigger>
-              <TabsTrigger value="correlation" className="gap-2">
-                <Grid3X3 className="h-4 w-4" />
-                Corrélations
-              </TabsTrigger>
-              <TabsTrigger value="importance" className="gap-2">
-                <BarChart3 className="h-4 w-4" />
-                Importance
-              </TabsTrigger>
-            </TabsList>
-
-            {/* Time Series */}
-            <TabsContent value="timeseries" className="space-y-6">
-              <Card className="border-border/50">
-                <CardHeader>
-                  <CardTitle>Évolution du taux TND/EUR</CardTitle>
-                  <CardDescription>
-                    Historique du taux de change sur les 12 derniers mois
-                  </CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <div className="h-80">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <LineChart data={historicalData}>
-                        <CartesianGrid strokeDasharray="3 3" className="stroke-border" />
-                        <XAxis dataKey="date" className="text-xs" />
-                        <YAxis domain={[0.28, 0.32]} className="text-xs" />
-                        <Tooltip 
-                          contentStyle={{ 
-                            backgroundColor: "hsl(var(--card))", 
-                            border: "1px solid hsl(var(--border))",
-                            borderRadius: "8px"
-                          }} 
-                        />
-                        <Legend />
-                        <Line
-                          type="monotone"
-                          dataKey="tndeur"
-                          name="TND/EUR"
-                          stroke="hsl(var(--primary))"
-                          strokeWidth={3}
-                          dot={{ fill: "hsl(var(--primary))" }}
-                        />
-                      </LineChart>
-                    </ResponsiveContainer>
-                  </div>
-                </CardContent>
-              </Card>
-
-              <div className="grid gap-6 lg:grid-cols-2">
-                {indicators.slice(0, 4).map((indicator) => (
-                  <Card key={indicator.key} className="border-border/50">
-                    <CardHeader className="pb-2">
-                      <CardTitle className="text-base">{indicator.name}</CardTitle>
-                    </CardHeader>
-                    <CardContent>
-                      <div className="h-48">
-                        <ResponsiveContainer width="100%" height="100%">
-                          <LineChart data={historicalData}>
-                            <CartesianGrid strokeDasharray="3 3" className="stroke-border" />
-                            <XAxis dataKey="date" tick={{ fontSize: 10 }} />
-                            <YAxis tick={{ fontSize: 10 }} />
-                            <Tooltip 
-                              contentStyle={{ 
-                                backgroundColor: "hsl(var(--card))", 
-                                border: "1px solid hsl(var(--border))",
-                                borderRadius: "8px"
-                              }} 
-                            />
-                            <Line
-                              type="monotone"
-                              dataKey={indicator.key}
-                              name={indicator.name}
-                              stroke={indicator.color}
-                              strokeWidth={2}
-                              dot={false}
-                            />
-                          </LineChart>
-                        </ResponsiveContainer>
-                      </div>
-                    </CardContent>
-                  </Card>
-                ))}
+      <div className="grid gap-6 lg:grid-cols-2">
+        {indicators.map((indicator) => (
+          <Card key={indicator.key} className="border-border/50">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-base">{indicator.name}</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="h-48">
+                <ResponsiveContainer width="100%" height="100%">
+                  <LineChart data={chartData}>
+                    <CartesianGrid
+                      strokeDasharray="3 3"
+                      className="stroke-border"
+                    />
+                    <XAxis dataKey="date" tick={{ fontSize: 10 }} />
+                    <YAxis tick={{ fontSize: 10 }} />
+                    <Tooltip
+                      contentStyle={{
+                        backgroundColor: "hsl(var(--card))",
+                        border: "1px solid hsl(var(--border))",
+                        borderRadius: "8px",
+                      }}
+                    />
+                    <Line
+                      type="monotone"
+                      dataKey={indicator.key}
+                      name={indicator.name}
+                      stroke={indicator.color}
+                      strokeWidth={2}
+                      dot={false}
+                    />
+                  </LineChart>
+                </ResponsiveContainer>
               </div>
-            </TabsContent>
+            </CardContent>
+          </Card>
+        ))}
+      </div>
+    </>
+  );
+};
 
-            {/* Correlation Matrix */}
-            <TabsContent value="correlation" className="space-y-6">
-              <Card className="border-border/50">
-                <CardHeader>
-                  <CardTitle>Matrice de corrélation</CardTitle>
-                  <CardDescription>
-                    Relations entre les différents indicateurs économiques et le taux TND/EUR
-                  </CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <div className="overflow-x-auto">
-                    <table className="w-full">
-                      <thead>
-                        <tr>
-                          <th className="p-2 text-left text-sm font-medium text-muted-foreground"></th>
-                          <th className="p-2 text-center text-sm font-medium text-muted-foreground">TND/EUR</th>
-                          <th className="p-2 text-center text-sm font-medium text-muted-foreground">TMM</th>
-                          <th className="p-2 text-center text-sm font-medium text-muted-foreground">PIB</th>
-                          <th className="p-2 text-center text-sm font-medium text-muted-foreground">Inflation</th>
-                          <th className="p-2 text-center text-sm font-medium text-muted-foreground">Balance</th>
-                          <th className="p-2 text-center text-sm font-medium text-muted-foreground">Chômage</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {correlationMatrix.map((row) => (
-                          <tr key={row.indicator}>
-                            <td className="p-2 text-sm font-medium text-foreground">{row.indicator}</td>
-                            {["tndeur", "tmm", "pib", "inflation", "balance", "chomage"].map((col) => (
-                              <td key={col} className="p-2">
-                                <div
-                                  className={`mx-auto flex h-12 w-12 items-center justify-center rounded-lg text-sm font-semibold ${getCorrelationColor(row[col as keyof typeof row] as number)} ${Math.abs(row[col as keyof typeof row] as number) > 0.5 ? "text-white" : "text-foreground"}`}
-                                >
-                                  {(row[col as keyof typeof row] as number).toFixed(2)}
-                                </div>
-                              </td>
-                            ))}
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
+const indicatorDetails: { [key: string]: { name: string; description: string } } = {
+    TMM: { name: "Taux du Marché Monétaire (TMM)", description: "Le TMM est le taux d'intérêt au jour le jour sur le marché monétaire tunisien." },
+    PIB: { name: "Produit Intérieur Brut (PIB)", description: "Le PIB mesure la richesse créée par le pays sur une période donnée." },
+    "Inflation Rate": { name: "Taux d'Inflation", description: "L'inflation mesure la hausse générale des prix des biens et services." },
+    "Balance Commerciale": { name: "Balance Commerciale", description: "La balance commerciale est la différence entre les exportations et les importations de biens." },
+    "Unemployment Rate": { name: "Taux de Chômage", description: "Le taux de chômage mesure la part des actifs sans emploi." },
+};
 
-                  <div className="mt-6 flex items-center justify-center gap-4 text-sm">
-                    <div className="flex items-center gap-2">
-                      <div className="h-4 w-4 rounded bg-red-500" />
-                      <span className="text-muted-foreground">Corrélation négative forte</span>
+const getCorrelationColor = (value: number) => {
+    if (value === 1) return "bg-primary";
+    if (value >= 0.6) return "bg-green-500";
+    if (value >= 0.3) return "bg-green-300";
+    if (value >= -0.3) return "bg-muted";
+    if (value >= -0.6) return "bg-red-300";
+    return "bg-red-500";
+};
+
+
+
+type FeatureData = {
+  name: string;
+  value: number;
+};
+
+
+
+function CorrelationMatrixView() {
+  const { data: matrix, error, isLoading } = useSWR<CorrelationMatrix>('correlation-matrix', getCorrelationMatrix);
+
+  if (isLoading) {
+    return (
+      <div className="flex h-64 items-center justify-center">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+      </div>
+    );
+  }
+
+  if (error || !matrix) {
+    return (
+      <div className="flex h-64 flex-col items-center justify-center text-destructive">
+        <AlertTriangle className="h-8 w-8" />
+        <p className="mt-2 text-center">Une erreur est survenue.</p>
+      </div>
+    );
+  }
+
+  return (
+    <>
+      <div className="overflow-x-auto">
+        <table className="w-full">
+          <thead>
+            <tr>
+              <th className="p-2 text-left text-sm font-medium text-muted-foreground"></th>
+              <th className="p-2 text-center text-sm font-medium text-muted-foreground">Price</th>
+              <th className="p-2 text-center text-sm font-medium text-muted-foreground">TMM</th>
+              <th className="p-2 text-center text-sm font-medium text-muted-foreground">PIB</th>
+              <th className="p-2 text-center text-sm font-medium text-muted-foreground">Inflation Rate</th>
+              <th className="p-2 text-center text-sm font-medium text-muted-foreground">Balance Commerciale</th>
+              <th className="p-2 text-center text-sm font-medium text-muted-foreground">Unemployment Rate</th>
+            </tr>
+          </thead>
+          <tbody>
+            {matrix.map((row) => (
+              <tr key={row.indicator}>
+                <td className="p-2 text-sm font-medium text-foreground">{row.indicator}</td>
+                {["Price", "TMM", "PIB", "Inflation Rate", "Balance Commerciale", "Unemployment Rate"].map((col) => (
+                  <td key={col} className="p-2">
+                    <div
+                      className={`mx-auto flex h-12 w-12 items-center justify-center rounded-lg text-sm font-semibold ${getCorrelationColor(row[col as keyof typeof row] as number)} ${Math.abs(row[col as keyof typeof row] as number) > 0.5 ? "text-white" : "text-foreground"}`}
+                    >
+                      {(row[col as keyof typeof row] as number)?.toFixed(2) ?? "N/A"}
                     </div>
-                    <div className="flex items-center gap-2">
-                      <div className="h-4 w-4 rounded bg-muted" />
-                      <span className="text-muted-foreground">Faible corrélation</span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <div className="h-4 w-4 rounded bg-green-500" />
-                      <span className="text-muted-foreground">Corrélation positive forte</span>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-
-              <Card className="border-border/50">
-                <CardHeader>
-                  <CardTitle>Interprétation des corrélations</CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <div className="rounded-lg bg-muted/50 p-4">
-                    <h4 className="font-semibold text-foreground">Inflation vs TND/EUR (-0.72)</h4>
-                    <p className="mt-1 text-sm text-muted-foreground">
-                      Une forte corrélation négative : quand l'inflation augmente, le dinar a tendance à se déprécier face à l'euro.
-                    </p>
-                  </div>
-                  <div className="rounded-lg bg-muted/50 p-4">
-                    <h4 className="font-semibold text-foreground">Balance commerciale vs TND/EUR (0.58)</h4>
-                    <p className="mt-1 text-sm text-muted-foreground">
-                      Une amélioration de la balance commerciale renforce généralement la valeur du dinar.
-                    </p>
-                  </div>
-                  <div className="rounded-lg bg-muted/50 p-4">
-                    <h4 className="font-semibold text-foreground">TMM vs TND/EUR (-0.65)</h4>
-                    <p className="mt-1 text-sm text-muted-foreground">
-                      Des taux d'intérêt élevés sont souvent associés à une politique restrictive face à l'inflation.
-                    </p>
-                  </div>
-                </CardContent>
-              </Card>
-            </TabsContent>
-
-            {/* Feature Importance */}
-            <TabsContent value="importance" className="space-y-6">
-              <Card className="border-border/50">
-                <CardHeader>
-                  <CardTitle>Importance des indicateurs dans les prédictions</CardTitle>
-                  <CardDescription>
-                    Poids relatif de chaque indicateur dans nos modèles de prédiction
-                  </CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <div className="h-80">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <BarChart data={featureImportance} layout="vertical">
-                        <CartesianGrid strokeDasharray="3 3" className="stroke-border" />
-                        <XAxis type="number" domain={[0, 0.35]} tickFormatter={(v) => `${(v * 100).toFixed(0)}%`} />
-                        <YAxis type="category" dataKey="name" width={150} />
-                        <Tooltip 
-                          formatter={(value: number) => `${(value * 100).toFixed(1)}%`}
-                          contentStyle={{ 
-                            backgroundColor: "hsl(var(--card))", 
-                            border: "1px solid hsl(var(--border))",
-                            borderRadius: "8px"
-                          }}
-                        />
-                        <Bar dataKey="importance" name="Importance" radius={[0, 4, 4, 0]}>
-                          {featureImportance.map((entry, index) => (
-                            <Cell key={`cell-${index}`} fill={entry.color} />
-                          ))}
-                        </Bar>
-                      </BarChart>
-                    </ResponsiveContainer>
-                  </div>
-                </CardContent>
-              </Card>
-
-              <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-                {featureImportance.map((feature, index) => (
-                  <Card key={index} className="border-border/50">
-                    <CardContent className="pt-6">
-                      <div className="flex items-center justify-between">
-                        <span className="font-medium text-foreground">{feature.name}</span>
-                        <span 
-                          className="text-lg font-bold"
-                          style={{ color: feature.color }}
-                        >
-                          {(feature.importance * 100).toFixed(0)}%
-                        </span>
-                      </div>
-                      <div className="mt-3 h-2 overflow-hidden rounded-full bg-muted">
-                        <div
-                          className="h-full rounded-full transition-all"
-                          style={{ 
-                            width: `${feature.importance * 100}%`,
-                            backgroundColor: feature.color
-                          }}
-                        />
-                      </div>
-                    </CardContent>
-                  </Card>
+                  </td>
                 ))}
-              </div>
-            </TabsContent>
-          </Tabs>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <CorrelationInterpretation matrix={matrix} />
+    </>
+  );
+}
+
+function VolatilityView() {
+  const [window, setWindow] = useState(12);
+  const [selectedIndicator, setSelectedIndicator] = useState("Inflation Rate");
+  const [metric, setMetric] = useState<"rolling_std" | "rolling_cv">("rolling_std");
+
+  const { data, error, isLoading } = useSWR<VolatilityResponse>(
+    `indicators-volatility-${window}`,
+    () => getIndicatorsVolatility(window)
+  );
+
+  const chartData = useMemo(() => {
+    if (!data) return [];
+    return data.dates.map((date, i) => ({
+      date,
+      value: data.volatility[selectedIndicator]?.[metric][i] ?? 0,
+    }));
+  }, [data, selectedIndicator, metric]);
+
+  if (isLoading) {
+    return (
+      <div className="flex h-64 items-center justify-center">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+      </div>
+    );
+  }
+
+  if (error || !data) {
+    return (
+      <div className="flex h-64 flex-col items-center justify-center text-destructive">
+        <AlertTriangle className="h-8 w-8" />
+        <p className="mt-2 text-center">Une erreur est survenue lors du chargement de la volatilité.</p>
+      </div>
+    );
+  }
+
+  const indicators = Object.keys(data.volatility);
+
+  return (
+    <div className="space-y-6">
+      <div className="flex flex-wrap items-center gap-4">
+        <div>
+          <label htmlFor="indicator-select" className="text-sm font-medium">Indicateur</label>
+          <select
+            id="indicator-select"
+            value={selectedIndicator}
+            onChange={(e) => setSelectedIndicator(e.target.value)}
+            className="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+          >
+            {indicators.map((indicator) => (
+              <option key={indicator} value={indicator}>{indicator}</option>
+            ))}
+          </select>
         </div>
-      </section>
+        <div>
+          <label htmlFor="window-select" className="text-sm font-medium">Fenêtre</label>
+          <select
+            id="window-select"
+            value={window}
+            onChange={(e) => setWindow(Number(e.target.value))}
+            className="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+          >
+            {[8, 12, 26, 52].map((w) => (
+              <option key={w} value={w}>{w} semaines</option>
+            ))}
+          </select>
+        </div>
+        <div className="flex items-center space-x-2">
+          <button onClick={() => setMetric("rolling_std")} className={`px-3 py-1 text-sm rounded-md ${metric === 'rolling_std' ? 'bg-primary text-primary-foreground' : 'bg-muted'}`}>Volatilité Absolue (Std)</button>
+          <button onClick={() => setMetric("rolling_cv")} className={`px-3 py-1 text-sm rounded-md ${metric === 'rolling_cv' ? 'bg-primary text-primary-foreground' : 'bg-muted'}`}>Volatilité Relative (CV)</button>
+        </div>
+      </div>
+
+      <p className="text-sm text-muted-foreground">
+        Higher volatility = higher uncertainty / risk. Rolling window smooths short-term noise.
+      </p>
+
+      <div className="h-80">
+        <ResponsiveContainer width="100%" height="100%">
+          <LineChart data={chartData}>
+            <CartesianGrid strokeDasharray="3 3" className="stroke-border" />
+            <XAxis dataKey="date" className="text-xs" />
+            <YAxis className="text-xs" />
+            <Tooltip
+              contentStyle={{
+                backgroundColor: "hsl(var(--card))",
+                border: "1px solid hsl(var(--border))",
+                borderRadius: "8px",
+              }}
+            />
+            <Legend />
+            <Line
+              type="monotone"
+              dataKey="value"
+              name={metric === 'rolling_std' ? 'Rolling Std' : 'Rolling CV'}
+              stroke="hsl(var(--primary))"
+              strokeWidth={2}
+              dot={false}
+            />
+          </LineChart>
+        </ResponsiveContainer>
+      </div>
+    </div>
+  );
+}
+
+const IndicateursPage = () => {
+  return (
+    <Layout>
+      <div className="flex-1 space-y-4 p-4 pt-6 md:p-8">
+        <div className="flex items-center justify-between space-y-2">
+          <h2 className="text-3xl font-bold tracking-tight">
+            Dashboard des Indicateurs Clés
+          </h2>
+        </div>
+        <Tabs defaultValue="overview" className="space-y-4">
+          <TabsList>
+            <TabsTrigger value="overview">
+              <TrendingUp className="mr-2 h-4 w-4" />
+              Vue d'ensemble
+            </TabsTrigger>
+            <TabsTrigger value="correlation">
+              <Grid3X3 className="mr-2 h-4 w-4" />
+              Matrice de Corrélation
+            </TabsTrigger>
+            <TabsTrigger value="volatility">
+              <BarChart3 className="mr-2 h-4 w-4" />
+              Analyse Vol
+            </TabsTrigger>
+          </TabsList>
+          <TabsContent value="overview" className="space-y-4">
+            <HistoricalDataView />
+          </TabsContent>
+          <TabsContent value="correlation">
+            <CorrelationMatrixView />
+          </TabsContent>
+          <TabsContent value="volatility">
+            <VolatilityView />
+          </TabsContent>
+        </Tabs>
+      </div>
     </Layout>
+  );
+};
+
+export default IndicateursPage;
+
+
+function IndicatorStatsView() {
+  const { data, error, isLoading } = useSWR<IndicatorsStatsResponse>('indicators-stats', getIndicatorsStats);
+
+  if (isLoading) {
+    return (
+      <div className="flex h-64 items-center justify-center">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+      </div>
+    );
+  }
+
+  if (error || !data) {
+    return (
+      <div className="flex h-64 flex-col items-center justify-center text-destructive">
+        <AlertTriangle className="h-8 w-8" />
+        <p className="mt-2 text-center">Une erreur est survenue lors du chargement des statistiques.</p>
+      </div>
+    );
+  }
+
+  const stats = data.stats;
+  const indicators = Object.keys(stats);
+
+  return (
+    <div className="overflow-x-auto">
+      <table className="w-full divide-y divide-border">
+        <thead className="bg-muted/50">
+          <tr>
+            <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground">Indicateur</th>
+            <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground">Moyenne</th>
+            <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground">Écart-type</th>
+            <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground">Minimum</th>
+            <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground">Maximum</th>
+            <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground">Médiane</th>
+            <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground">Asymétrie</th>
+            <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground">Aplatissement</th>
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-border">
+          {indicators.slice(1).map((indicator) => (
+            <tr key={indicator}>
+              <td className="whitespace-nowrap px-6 py-4 text-sm font-medium text-foreground">{indicator}</td>
+              <td className="whitespace-nowrap px-6 py-4 text-sm text-muted-foreground">{stats[indicator].mean.toFixed(2)}</td>
+              <td className="whitespace-nowrap px-6 py-4 text-sm text-muted-foreground">{stats[indicator].std.toFixed(2)}</td>
+              <td className="whitespace-nowrap px-6 py-4 text-sm text-muted-foreground">{stats[indicator].min.toFixed(2)}</td>
+              <td className="whitespace-nowrap px-6 py-4 text-sm text-muted-foreground">{stats[indicator].max.toFixed(2)}</td>
+              <td className="whitespace-nowrap px-6 py-4 text-sm text-muted-foreground">{stats[indicator].median.toFixed(2)}</td>
+              <td className="whitespace-nowrap px-6 py-4 text-sm text-muted-foreground">{stats[indicator].skew.toFixed(2)}</td>
+              <td className="whitespace-nowrap px-6 py-4 text-sm text-muted-foreground">{stats[indicator].kurtosis.toFixed(2)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function CorrelationInterpretation({ matrix }: { matrix: CorrelationMatrix }) {
+  const tndEurCorrelations = useMemo(() => {
+    const tndEurRow = matrix.find(row => row.indicator === "Price");
+    if (!tndEurRow) return [];
+
+    return Object.entries(tndEurRow)
+      .filter(([key]) => key !== "indicator" && key !== "Price")
+      .map(([key, value]) => ({
+        indicator: key,
+        value: value as number,
+        abs: Math.abs(value as number)
+      }))
+      .sort((a, b) => b.abs - a.abs);
+  }, [matrix]);
+
+  const interpretations: { [key: string]: { positive: string; negative: string } } = {
+    PIB: {
+      positive: "Une croissance économique (hausse du PIB) est généralement corrélée avec une appréciation du dinar.",
+      negative: "Une contraction économique (baisse du PIB) tend à affaiblir le dinar."
+    },
+    TMM: {
+      positive: "Une hausse des taux directeurs (TMM) peut attirer des capitaux et renforcer le dinar.",
+      negative: "Une baisse des taux directeurs (TMM) est souvent associée à une dépréciation du dinar pour stimuler l'économie."
+    },
+    "Inflation Rate": {
+      positive: "Une inflation modérée peut parfois coïncider avec une croissance économique, soutenant le dinar.",
+      negative: "Une forte inflation érode le pouvoir d'achat et exerce une pression à la baisse sur le dinar."
+    },
+    "Balance Commerciale": {
+      positive: "Un excédent de la balance commerciale signifie plus de devises étrangères entrant, ce qui renforce le dinar.",
+      negative: "Un déficit de la balance commerciale affaiblit la demande pour le dinar, le dépréciant."
+    },
+    "Unemployment Rate": {
+      positive: "Une corrélation positive est atypique; elle pourrait indiquer des facteurs structurels complexes.",
+      negative: "Une baisse du chômage signale une économie saine, ce qui tend à renforcer le dinar."
+    }
+  };
+
+  return (
+    <Card className="border-border/50 mt-6">
+      <CardHeader>
+        <CardTitle>Interprétation des corrélations</CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        {tndEurCorrelations.slice(0, 3).map(({ indicator, value }) => {
+          const interpretationText = value >= 0
+            ? interpretations[indicator]?.positive
+            : interpretations[indicator]?.negative;
+
+          if (!interpretationText) return null;
+
+          const indicatorName = indicatorDetails[indicator]?.name || indicator;
+
+          return (
+            <div key={indicator} className="rounded-lg bg-muted/50 p-4">
+              <h4 className="font-semibold text-foreground">{indicatorName} vs TND/EUR ({value.toFixed(2)})</h4>
+              <p className="mt-1 text-sm text-muted-foreground">
+                {interpretationText}
+              </p>
+            </div>
+          );
+        })}
+      </CardContent>
+    </Card>
   );
 }
