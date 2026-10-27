@@ -2,7 +2,7 @@
 
 Attijari Exchange Insights est une plateforme avancée d'analyse et de prévision des taux de change, spécifiquement axée sur la paire TND/EUR. Cet outil est conçu pour aider les décideurs financiers à naviguer sur les marchés des changes grâce à des analyses basées sur les données et des modèles de prévision sophistiqués.
 
-## 🚀 Fonctionnalités Clés
+##  Fonctionnalités Clés
 
 - **Tableau de Bord des Indicateurs** : Visualisez en temps réel les indicateurs clés du marché monétaire et des changes.
 - **Modèles de Prévision Sophistiqués** : Utilisation d'algorithmes de pointe pour prédire les tendances futures :
@@ -14,7 +14,7 @@ Attijari Exchange Insights est une plateforme avancée d'analyse et de prévisio
 - **Comparaison de Modèles** : Analysez et comparez les performances de différents modèles via des métriques comme le RMSE, MAE, etc.
 - **Espace Éducation** : Ressources didactiques pour approfondir vos connaissances sur les mécanismes du marché des changes.
 
-## 🛠️ Technologies Utilisées
+##  Technologies Utilisées
 
 Ce projet est construit avec une stack technologique moderne et performante :
 
@@ -25,7 +25,8 @@ Ce projet est construit avec une stack technologique moderne et performante :
 - **Icônes** : [Lucide React](https://lucide.dev/).
 - **Validation de données** : [Zod](https://zod.dev/), [React Hook Form](https://react-hook-form.com/).
 
-## 📦 Installation et Utilisation
+## 
+Installation et Utilisation
 
 ### Prérequis
 - Node.js (version 18.x ou supérieure)
@@ -48,7 +49,7 @@ Ce projet est construit avec une stack technologique moderne et performante :
    npm run dev
    ```
 
-## 📈 Objectif du Projet
+##  Objectif du Projet
 L'objectif de ce projet est de transformer la gestion du risque de change en fournissant un outil analytique qui allie l'expertise financière traditionnelle aux capacités prédictives de l'intelligence artificielle, permettant ainsi une prise de décision plus éclairée et proactive.
 
 ---
